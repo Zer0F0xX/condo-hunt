@@ -1,10 +1,12 @@
 {
   "name": "condo-hunt",
+  "version": "1.0.0",
   "type": "module",
   "dependencies": {
     "playwright": "^1.48.0"
   },
   "scripts": {
-    "scrape": "node scrape.js"
+    "scrape": "node scrape.js",
+    "test:telegram": "node scripts/tools/test_telegram.js"
   }
 }
