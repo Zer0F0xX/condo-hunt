@@ -1,0 +1,10 @@
+{
+  "name": "condo-hunt",
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  },
+  "scripts": {
+    "scrape": "node scrape.js"
+  }
+}
