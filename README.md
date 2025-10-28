@@ -6,7 +6,7 @@ Unified, free condo-hunting pipeline for the GTA with Playwright scraping, Googl
 1. Create Google Sheet named "🏙️ Condo Hunt — GTA"; add tabs: `UNIFIED`, `SHORTLIST`, `CONFIG`.
 2. Paste the CONFIG TSV (see below) into `CONFIG!A1`.
 3. Paste the UNIFIED and SHORTLIST header lines into `UNIFIED!A1` and `SHORTLIST!A1`.
-4. In Google Sheets → `Extensions` → `Apps Script` → paste `scripts/appsheet/apps_script.gs`; set `BOT_TOKEN`, `CHAT_ID`, and later `GITHUB_UNIFIED_JSON`.
+4. In Google Sheets → `Extensions` → `Apps Script` → paste `scripts/appsheet/apps_script.gs`; set `BOT_TOKEN`, `CHAT_ID`, and later `GITHUB_UNIFIED_JSON`. (Sheet ID handy for future integrations: `1qq8BZzh78A6UWmowff7cxzripo_Q8FWT5vpLohCacQUjSVkpk9FC1DOi`.)
 5. Run `runHunt()` once inside Apps Script and authorize the permissions prompt.
 6. Add a trigger: `Apps Script` → `Triggers` → `+ Add Trigger` → choose `runHunt` → `Time-driven` → `Minutes timer` → `Every 5 minutes`.
 7. In GitHub → `Actions` tab → open **Scrape Listings** → ensure a run succeeds and `exports/unified.json` exists.
