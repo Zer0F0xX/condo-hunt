@@ -38,3 +38,4 @@ Unified, free condo-hunting pipeline for the GTA with Playwright scraping, Googl
 - Scraper logs counts per data source and surfaces the first 2 titles for a quick smoke check.
 - Apps Script fallback RSS pulls Kijiji/Craigslist if the GitHub JSON is offline.
 - If Playwright launch fails locally, rerun `npm i && npx playwright install --with-deps`.
+- If Playwright complains about missing browsers, set `PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers` when running `npm run scrape`.
