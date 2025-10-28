@@ -18,6 +18,7 @@ Unified, free condo-hunting pipeline for the GTA with Playwright scraping, Googl
 - `npm run scrape` — refresh `exports/unified.json` locally.
 - `npm run test:telegram` — prompt for `BOT_TOKEN`/`CHAT_ID` and send a test ping (no secrets stored).
 - `make setup` (optional) — install deps and Playwright; `make scrape`; `make test-telegram`.
+- Toggle adapters in `scrape.js` via the `ADAPTERS` constant (Facebook stays off in CI unless you enable it locally).
 - Optional local overrides go into `scripts/local/.env` (start from `.env.template`) but keep secrets out of source control.
 
 ## CI pipeline
@@ -33,6 +34,12 @@ Unified, free condo-hunting pipeline for the GTA with Playwright scraping, Googl
 ## Telegram + Sheets secrets
 - Never commit real tokens or IDs. Populate them only inside Apps Script prompts or local `.env` files that stay untracked.
 - Keep the Sheet ID handy (the string between `/d/` and `/edit` in the Sheet URL) when wiring the Apps Script fetch URL.
+
+## Facebook Marketplace adapter (optional)
+1. In your browser, log into Facebook and open the Marketplace housing feed for Toronto.
+2. Export cookies to JSON (e.g., Chrome DevTools → Application → Cookies → Export, or a cookie exporter extension) and save them to `scripts/local/fb_cookies.json` — the file is ignored by git.
+3. Flip `ADAPTERS.FB` to `true` inside `scrape.js` when you want to include Marketplace listings; leave it `false` for CI.
+4. Run `PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers npm run scrape` locally; the adapter reuses your saved cookies and skips gracefully if Facebook is unreachable.
 
 ## Logs & troubleshooting
 - Scraper logs counts per data source and surfaces the first 2 titles for a quick smoke check.

@@ -15,6 +15,15 @@ const DEFAULT_REGIONS = [
   'Vaughan'
 ];
 
+// Adapter toggles (FB default false for CI-safe runs)
+const ADAPTERS = {
+  REA: true,
+  CONDOS: true,
+  FB: false
+};
+
+const FB_COOKIES_PATH = path.resolve('scripts/local/fb_cookies.json');
+
 const MAX_RENT = sanitizeMaxRent(process.env.MAX_RENT);
 const REGIONS = parseRegions(process.env.REGIONS);
 
@@ -245,27 +254,278 @@ async function craigslistAdapter(maxRent, regions) {
   return aggregate;
 }
 
-async function realtorAdapter(page, maxRent, regions) {
-  // TODO: Implement Realtor.ca scraping with filters: rent <= maxRent, 1 bed + den, parking, York Region.
-  // Suggested approach: search for listings, wait for cards, extract title, price, address, city, link, image, and floor info.
-  void page;
-  void maxRent;
-  void regions;
-  return [];
+async function realtorAdapter(browser, maxRent, regions) {
+  if (!browser) {
+    console.warn('[adapter:realtor] skipped (browser unavailable)');
+    return [];
+  }
+
+  const listings = [];
+  const page = await browser.newPage();
+
+  try {
+    for (const region of regions) {
+      const searchUrl = `https://www.realtor.ca/on/real-estate?price-to=${maxRent}&beds=1-1&keywords=${encodeURIComponent(
+        `${region} den parking`
+      )}`;
+      try {
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForTimeout(3500);
+        const regionListings = await page.$$eval('[data-test="property-card"]', (cards) =>
+          cards.slice(0, 8).map((card) => {
+            const anchor = card.querySelector('a[href*="/real-estate/"]');
+            const priceNode =
+              card.querySelector('[data-test="property-card-price"]') ||
+              card.querySelector('[class*="price"]');
+            const addressNode =
+              card.querySelector('[data-test="property-card-address"]') ||
+              card.querySelector('[class*="address"]');
+            const detailNode =
+              card.querySelector('[data-test="property-card-attributes"]') ||
+              card.querySelector('[class*="details"]');
+            const imageNode = card.querySelector('img');
+            return {
+              title: anchor?.textContent?.trim() || '',
+              url: anchor?.href || '',
+              priceText: priceNode?.textContent?.trim() || '',
+              addressText: addressNode?.textContent?.trim() || '',
+              metaText: detailNode?.textContent?.trim() || '',
+              image: imageNode?.src || ''
+            };
+          })
+        );
+
+        for (const item of regionListings) {
+          listings.push({
+            title: item.title || `${region} condo`,
+            url: item.url,
+            price: extractPrice(item.priceText) ?? extractPrice(item.metaText),
+            address: item.addressText || region,
+            city: region,
+            neighborhood: region,
+            building: '',
+            unit: '',
+            beds: '',
+            baths: '',
+            sqft: null,
+            fee_month: null,
+            parking: /parking/i.test(item.metaText || ''),
+            amenities: [],
+            floor: null,
+            total_floors: null,
+            exposure: '',
+            images: item.image ? [item.image] : [],
+            description: [item.priceText, item.metaText].filter(Boolean).join(' • '),
+            date_found: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        console.error(`[adapter:realtor] region "${region}" failed: ${error.message}`);
+      }
+      await page.waitForTimeout(750);
+    }
+  } finally {
+    await page.close();
+  }
+
+  return listings;
 }
 
-async function condosAdapter(page, maxRent, regions) {
-  // TODO: Implement condos listings scraping with infinite scroll handling and robust selectors.
-  // Use page.evaluate with scrollBy loop and gather card details (title, price, address, beds, baths, photos).
-  void page;
-  void maxRent;
-  void regions;
-  return [];
+async function condosAdapter(browser, maxRent, regions) {
+  if (!browser) {
+    console.warn('[adapter:condos] skipped (browser unavailable)');
+    return [];
+  }
+
+  const listings = [];
+  const page = await browser.newPage();
+
+  try {
+    for (const region of regions) {
+      const searchUrl = `https://condos.ca/for-rent?max_price=${maxRent}&keywords=${encodeURIComponent(
+        `${region} 1+den parking`
+      )}`;
+      try {
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForTimeout(3500);
+        await page.evaluate(async () => {
+          const scrollTimes = 3;
+          for (let i = 0; i < scrollTimes; i += 1) {
+            window.scrollBy(0, window.innerHeight);
+            await new Promise((resolve) => setTimeout(resolve, 600));
+          }
+        });
+        const regionListings = await page.$$eval('[data-testid="listing-card"]', (cards) =>
+          cards.slice(0, 10).map((card) => {
+            const anchor = card.querySelector('a[href*="/for-rent/"]');
+            const titleNode = card.querySelector('[data-testid="listing-card-title"]') || card.querySelector('h2,h3');
+            const priceNode =
+              card.querySelector('[data-testid="listing-card-price"]') || card.querySelector('[class*="price"]');
+            const detailNode =
+              card.querySelector('[data-testid="listing-card-details"]') ||
+              card.querySelector('[class*="details"]');
+            const imageNode = card.querySelector('img');
+            return {
+              title: titleNode?.textContent?.trim() || '',
+              url: anchor?.href || '',
+              priceText: priceNode?.textContent?.trim() || '',
+              metaText: detailNode?.textContent?.trim() || '',
+              image: imageNode?.src || ''
+            };
+          })
+        );
+
+        for (const item of regionListings) {
+          listings.push({
+            title: item.title || `${region} condo`,
+            url: item.url,
+            price: extractPrice(item.priceText) ?? extractPrice(item.metaText),
+            address: region,
+            city: region,
+            neighborhood: region,
+            building: '',
+            unit: '',
+            beds: /bed/i.test(item.metaText || '') ? item.metaText : '',
+            baths: '',
+            sqft: null,
+            fee_month: null,
+            parking: /parking/i.test(item.metaText || ''),
+            amenities: [],
+            floor: null,
+            total_floors: null,
+            exposure: '',
+            images: item.image ? [item.image] : [],
+            description: [item.priceText, item.metaText].filter(Boolean).join(' • '),
+            date_found: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        console.error(`[adapter:condos] region "${region}" failed: ${error.message}`);
+      }
+      await page.waitForTimeout(750);
+    }
+  } finally {
+    await page.close();
+  }
+
+  return listings;
+}
+
+async function facebookAdapter(browser, maxRent, regions, cookiesPath) {
+  if (!browser) {
+    console.warn('[adapter:facebook] skipped (browser unavailable)');
+    return [];
+  }
+
+  if (!ADAPTERS.FB) {
+    console.log('[adapter:facebook] skipped (disabled via ADAPTERS.FB)');
+    return [];
+  }
+
+  if (!fs.existsSync(cookiesPath)) {
+    console.warn(`[adapter:facebook] skipped (cookies missing at ${cookiesPath})`);
+    return [];
+  }
+
+  let cookies = [];
+  try {
+    const raw = fs.readFileSync(cookiesPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      cookies = parsed;
+    } else if (Array.isArray(parsed.cookies)) {
+      cookies = parsed.cookies;
+    } else {
+      console.warn('[adapter:facebook] cookie file format not recognized.');
+      return [];
+    }
+  } catch (error) {
+    console.error(`[adapter:facebook] failed to read cookies: ${error.message}`);
+    return [];
+  }
+
+  const context = await browser.newContext();
+  await context.addCookies(cookies);
+  const page = await context.newPage();
+  const listings = [];
+
+  try {
+    for (const region of regions) {
+      const searchUrl = `https://www.facebook.com/marketplace/toronto/propertyrentals?minPrice=0&maxPrice=${maxRent}&exact=false&query=${encodeURIComponent(
+        `${region} 1+den parking`
+      )}`;
+      try {
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForTimeout(4000);
+        await page.evaluate(async () => {
+          const scrollTimes = 2;
+          for (let i = 0; i < scrollTimes; i += 1) {
+            window.scrollBy(0, window.innerHeight);
+            await new Promise((resolve) => setTimeout(resolve, 700));
+          }
+        });
+        await page.waitForTimeout(1500);
+        const regionListings = await page.$$eval('a[href*="/marketplace/item/"]', (anchors) => {
+          const dedupe = new Map();
+          anchors.slice(0, 12).forEach((anchor) => {
+            const href = anchor.getAttribute('href') || '';
+            if (!href || dedupe.has(href)) return;
+            const titleNode = anchor.querySelector('span');
+            const priceNode = anchor.querySelector('span span');
+            const imageNode = anchor.querySelector('img');
+            const textContent = anchor.textContent || '';
+            dedupe.set(href, {
+              href,
+              title: titleNode?.textContent?.trim() || textContent.trim(),
+              priceText: priceNode?.textContent?.trim() || textContent.trim(),
+              image: imageNode?.src || ''
+            });
+          });
+          return Array.from(dedupe.values());
+        });
+
+        for (const item of regionListings) {
+          const absoluteUrl = item.href.startsWith('http')
+            ? item.href
+            : `https://www.facebook.com${item.href}`;
+          listings.push({
+            title: item.title || `${region} listing`,
+            url: absoluteUrl,
+            price: extractPrice(item.priceText),
+            address: region,
+            city: region,
+            neighborhood: region,
+            building: '',
+            unit: '',
+            beds: '',
+            baths: '',
+            sqft: null,
+            fee_month: null,
+            parking: /parking/i.test(item.title || ''),
+            amenities: [],
+            floor: null,
+            total_floors: null,
+            exposure: '',
+            images: item.image ? [item.image] : [],
+            description: item.priceText || item.title || '',
+            date_found: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        console.error(`[adapter:facebook] region "${region}" failed: ${error.message}`);
+      }
+      await page.waitForTimeout(900);
+    }
+  } finally {
+    await page.close();
+    await context.close();
+  }
+
+  return listings;
 }
 
 async function main() {
-  let browser;
-  let page;
+  let browser = null;
   const collected = [];
 
   const demoSeed = [
@@ -346,48 +606,70 @@ async function main() {
     }
   ];
 
-  try {
-    browser = await chromium.launch({ headless: true });
-    page = await browser.newPage();
-  } catch (error) {
-    console.error(`[playwright] launch failed: ${error.message}`);
+  const needsBrowser = ADAPTERS.REA || ADAPTERS.CONDOS || ADAPTERS.FB;
+  if (needsBrowser) {
+    try {
+      browser = await chromium.launch({ headless: true });
+    } catch (error) {
+      console.error(`[playwright] launch failed: ${error.message}`);
+      browser = null;
+    }
   }
 
   const adapters = [
     {
-      name: 'Kijiji',
+      key: 'kijiji',
+      label: 'Kijiji',
+      enabled: true,
       run: () => kijijiAdapter(MAX_RENT, REGIONS)
     },
     {
-      name: 'Craigslist',
+      key: 'craigslist',
+      label: 'Craigslist',
+      enabled: true,
       run: () => craigslistAdapter(MAX_RENT, REGIONS)
     },
     {
-      name: 'Realtor',
-      run: () => (page ? realtorAdapter(page, MAX_RENT, REGIONS) : [])
+      key: 'realtor',
+      label: 'Realtor',
+      enabled: ADAPTERS.REA,
+      run: () => realtorAdapter(browser, MAX_RENT, REGIONS)
     },
     {
-      name: 'Condos',
-      run: () => (page ? condosAdapter(page, MAX_RENT, REGIONS) : [])
+      key: 'condos',
+      label: 'Condos',
+      enabled: ADAPTERS.CONDOS,
+      run: () => condosAdapter(browser, MAX_RENT, REGIONS)
+    },
+    {
+      key: 'facebook',
+      label: 'Facebook',
+      enabled: ADAPTERS.FB,
+      run: () => facebookAdapter(browser, MAX_RENT, REGIONS, FB_COOKIES_PATH)
     }
   ];
 
   for (const adapter of adapters) {
+    if (!adapter.enabled) {
+      console.log(`[adapter:${adapter.key}] skipped (disabled)`);
+      continue;
+    }
     try {
       const rawRows = await adapter.run();
-      const normalized = rawRows.map((row) => normalize(row, adapter.name));
+      const normalized = (rawRows ?? []).map((row) => normalize(row, adapter.label));
       collected.push(...normalized);
-      console.log(`[adapter:${adapter.name.toLowerCase()}] collected ${normalized.length}`);
+      console.log(`[adapter:${adapter.key}] collected ${normalized.length}`);
     } catch (error) {
-      console.error(`[adapter:${adapter.name.toLowerCase()}] failed: ${error.message}`);
+      console.error(`[adapter:${adapter.key}] failed: ${error.message}`);
     }
   }
 
-  try {
-    if (page) await page.close();
-    if (browser) await browser.close();
-  } catch (error) {
-    console.error(`[playwright] shutdown error: ${error.message}`);
+  if (browser) {
+    try {
+      await browser.close();
+    } catch (error) {
+      console.error(`[playwright] shutdown error: ${error.message}`);
+    }
   }
 
   const deduped = dedupeByUrl(collected);

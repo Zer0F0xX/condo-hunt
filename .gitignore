@@ -2,3 +2,4 @@ node_modules/
 .playwright-browsers/
 .DS_Store
 scripts/local/.env
+scripts/local/fb_cookies.json
