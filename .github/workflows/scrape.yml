@@ -6,7 +6,7 @@ on:
   workflow_dispatch:          # manual "Run workflow" button
 
 permissions:
-  contents: write             # <-- allows committing unified.json
+  contents: write             # allows committing unified.json
 
 jobs:
   scrape:
